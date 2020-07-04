@@ -1,23 +1,26 @@
+#include <stdlib.h>
+
 typedef struct{
     void *data;
+    int (*cmp)(void *, void *);
     int size, len;
-    char dType;
+    int eSize;
 } List;
 
-static const char *types[] = {"int", "long", "float", "double", "char", "string", "list"};
 
+int intCmp(void *a, void *b);
+int dblCmp(void *a, void *b);
 char append(List *list, void *value);
 char insert(List *list, void *value, int index);
 char insertSorted(List *list, void *value);
-void insertionResize(List *list);
 void *removeRet(List *list, int index);
-int removeNoRet(List *list, int index);
+//int removeNoRet(List *list, int index);
 void *get(List *list, int index);
 char set(List *list, int index, void *value);
 int indexOf(List *list, void *value);
-int closestIndexOf(List *list, void *value);
-int cmpVal(void *a, void *b, int flag);
-List *createDataList(int len, char *type);
+int cmpVal(void *a, void *b, List *list); 
 void deleteDataList(List *list);
-size_t sizeType(int flag);
-void copyVal(void *src, void *trg, int flag);
+int closestIndexOf(List *list, void *value);
+
+
+List *createDataList(int len, size_t size, int (*cmp)(void *, void *));

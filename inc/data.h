@@ -1,9 +1,7 @@
-#include "list.h"
-
 typedef struct{
     List *feats, *cls, *uFeats;
     int numEntries;
 } Data;
 
-Data *createData(int entries);
+Data *createData();
 void deleteData(Data *data);

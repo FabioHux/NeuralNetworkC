@@ -5,13 +5,37 @@
  * 
  * Date Created: 5/24/2020
  * 
- * Date Last Edited: 5/24/2020
+ * Date Last Edited: 7/3/2020
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "list.h"
+
+void insertionResize(List *list);
+void shiftOneRight(char *start, long offset, char *stop);
+void shiftOneLeft(char *start, long offset, char *stop);
+
+/**
+ * Function to compare to elements in a list by int types.
+ * 
+ * Function will return a value equating to *a - *b in the forms of integers. Function is to be used as cmp for createDataList() in the event the elements are of type int.
+ * 
+ */
+int intCmp(void *a, void *b){
+    return *((int *)a) - *((int *)b);
+}
+
+/**
+ * Function to compare to elements in a list by double types.
+ * 
+ * Function will return a int value equating to double casted *a - *b. Function is to be used as cmp for createDataList() in the event the elements are of type double.
+ * 
+ */
+int dblCmp(void *a, void *b){
+    return (int) (*((double *)a) - *((double *)b));
+}
 
 /**
  * Function to append an element to the end of the list.
@@ -21,9 +45,67 @@
  * Will return a 0 or 1 on failure or success, respectively. Function will exit the program in the event that it cannot reallocate space for the list.
  */
 char append(List *list, void *value){
-    insertionResize(list);
+    if(list->size == list->len){
+        insertionResize(list);
+    }
 
     return set(list, list->size++, value);
+}
+
+/**
+ * Function to shift certain elements in a list to the right to make room for an insert.
+ * 
+ * Used as a helper function for insert(), the function will move all the data from stop to the right of the list until it reaches start. (start > stop). Offset must be the list's eSize value.
+ * 
+ * NOTE: There is no safety in this function and must be done with care!
+ */
+void shiftOneRight(char *start, long offset, char *stop){
+    asm volatile(
+        "jmp 2f\n\t"
+        "1:movq (%0), %%rcx\n\t"
+        "movq %%rcx, (%0, %1)\n\t"
+        "subq $8, %0\n\t"
+        "2: cmpq %2, %0\n\t"
+        "jge 1b\n\t"
+        "addq $7, %0\n\t"
+        "jmp 4f\n\t"
+        "3:movb (%0), %%cl\n\t"
+        "movb %%cl, (%0, %1)\n\t"
+        "decq %0\n\t"
+        "4: cmpq %2, %0\n\t"
+        "jge 3b\n\t"
+        : 
+        : "D" (start), "S" (offset), "d" (stop)
+        : "%rcx", "%cl"
+    );
+}
+
+/**
+ * Function to shift certain elements in a list to the left to remove an element.
+ * 
+ * Used as a helper function for removeRet(), the function will move all the data from start to the left of the list until it reaches stop. (start < stop). Offset must be the list's eSize value.
+ * 
+ * NOTE: There is no safety in this function and must be done with care!
+ */
+void shiftOneLeft(char *start, long offset, char *stop){
+    asm volatile(
+        "jmp 2f\n\t"
+        "1:movq (%0, %1), %%rcx\n\t"
+        "movq %%rcx, (%0)\n\t"
+        "addq $8, %0\n\t"
+        "2: cmpq %2, %0\n\t"
+        "jl 1b\n\t"
+        "subq $7, %0\n\t"
+        "jmp 4f\n\t"
+        "3:movb (%0, %1), %%cl\n\t"
+        "movb %%cl, (%0)\n\t"
+        "incq %0\n\t"
+        "4: cmpq %2, %0\n\t"
+        "jl 3b\n\t"
+        : 
+        : "D" (start), "S" (offset), "d" (stop)
+        : "%rcx", "%cl"
+    );
 }
 
 /**
@@ -39,13 +121,22 @@ char insert(List *list, void *value, int index){
     }else if(index == list->size){
         return append(list, value);
     }else{
-        insertionResize(list);
-
-        int i = list->size++;
-        while(i > index){
-            set(list, i, list->data + (i - 1));
-            --i;
+        if(list->size == list->len){
+            insertionResize(list);
         }
+
+        //Previous implementation. While good, calling set continuously or shifting byte by byte proved to be slow.
+        /*char *stop = (char *) list->data + (index * list->eSize);
+        char *prev = (char *) list->data + (list->size++ * list->eSize) - 1;
+        char *curr = (char *) list->data + (list->size * list->eSize) - 1;
+        while(prev >= stop){
+            *(curr--) = *(prev--);
+            //set(list, i, list->data + ((i - 1)*list->eSize));
+        }*/
+        
+        char *stop = (char *) list->data + ((index) * list->eSize);
+        char *start = (char *) list->data + ((list->size++) * list->eSize) - 8;
+        shiftOneRight(start, list->eSize, stop);
 
         return set(list, index, value);
     }
@@ -67,13 +158,13 @@ char insertSorted(List *list, void *value){
 /**
  * Function used to adjust the size of the list if there is insufficient space.
  * 
- * Function will compare the size and the length and in the even that both values are the same, it will realloc the list to twice the length.
+ * Function will compare the size and the length and in the event that both values are the same, it will realloc the list to twice the length.
  * 
  * NOTE: Should not be used by outside user, rather a helper function for append(), insert(), and insertSorted().
  */
 void insertionResize(List *list){
     if(list->size == list->len){
-        list->data = realloc(list->data, sizeType(list->dType) * (list->len * 2));
+        list->data = (char *)realloc(list->data, list->eSize * (list->len * 2));
         if(list->data == NULL){
             printf("An error occurred with realloc in insertionResize. Exiting.\n");
             exit(0);
@@ -98,22 +189,26 @@ void *removeRet(List *list, int index){
         return NULL;
     }
 
-    void *value = calloc(1,sizeType(list->dType));
+    void *value = calloc(1,list->eSize);
 
     if(value == NULL){
         printf("An error occurred with malloc in remove. Exiting.\n");
         exit(0);
     }
 
-    copyVal(list->data + index, value, list->dType);
+    char *start = (char *) list->data + (index * list->eSize);
 
-    int i = index;
-    while(i < list->size - 1){
-        set(list, i, list->data + (i + 1));
-        ++i;
+    memcpy(value, start, list->eSize);
+
+    if(index < list->size - 1){
+        char *stop = (char *) list->data + ((--list->size) * list->eSize);
+
+        shiftOneLeft(start, list->eSize, stop);
+    }else{
+        --list->size;
     }
 
-    list->size--;
+    //list->size--;
     return value;
 }
 
@@ -124,7 +219,7 @@ void *removeRet(List *list, int index){
  * 
  * NOTE: In the case that the list is of strings or lists, it will be freed by the function.
  */
-int removeNoRet(List *list, int index){
+/*int removeNoRet(List *list, int index){
     if(index < 0 || index >= list->size) return 0;
 
     if(list->dType == 5){
@@ -141,7 +236,7 @@ int removeNoRet(List *list, int index){
 
     list->size--;
     return 1;
-}
+}*/
 
 /**
  * Function to get an element from the list at a given index (if valid).
@@ -157,7 +252,7 @@ void *get(List *list, int index){
         return NULL;
     }
 
-    return list->data + index;
+    return list->data + (index * list->eSize);
 }
 
 /**
@@ -171,35 +266,7 @@ char set(List *list, int index, void *value){
         return 0;
     }
 
-    switch(list->dType){
-        case 0:
-            ((int *) list->data)[index] = *((int *) value);
-            break;
-        case 1:
-            ((long *) list->data)[index] = *((long *) value);
-            break;
-        case 2:
-            ((float *) list->data)[index] = *((float *) value);
-            break;
-        case 3:
-            ((double *) list->data)[index] = *((double *) value);
-            break;
-        case 4:
-            ((char *) list->data)[index] = *((char *) value);
-            break;
-        case 5:
-            if(*((char **) list->data + index) != NULL)
-                free(*((char **) list->data + index));
-            ((char **) list->data)[index] = ((char *) value);
-            break;
-        case 6:
-            if(*((List **) list->data + index) != NULL)
-                deleteDataList(*((List **) list->data + index));
-            ((List **) list->data)[index] = ((List *) value);
-            break;
-        default:
-            return 0;
-    }
+    memcpy(list->data + (index * list->eSize), value, list->eSize);
     
     return 1;
 }
@@ -213,13 +280,45 @@ char set(List *list, int index, void *value){
  * In this case, it would mean that if one were to search for the index of a List, it would attempt to search it by the address of the pointer.
  */
 int indexOf(List *list, void *value){
-    int index = closestIndexOf(list, value);
-
-    if(index >= list->size || cmpVal(list->data + index, value, list->dType)){
+    /*int index = closestIndexOf(list, value);
+   
+    if(index >= list->size || (list->cmp == NULL && memcmp(list->data + (index * list->eSize), value, list->eSize)) || list->cmp(list->data + (index * list->eSize), value)){
         index = -1;
     }
 
-    return index;
+    return index;*/
+
+    if(list->size == 0){
+        return -1;
+    }
+
+    int low = 0, high = list->size - 1, mid, diff;
+
+    while(1){
+        diff = cmpVal(list->data + (low * list->eSize), value, list);
+        if(diff > 0){
+            return -1;
+        }else if(!diff){
+            return low;
+        }else{
+            diff = cmpVal(list->data + (high * list->eSize), value, list);
+            if(diff < 0){
+                return -1;
+            }else if(!diff){
+                return high;
+            }else{
+                mid = (high + low) >> 1;
+                diff = cmpVal(list->data + (mid * list->eSize), value, list);
+                if(!diff){
+                    return mid;
+                }else if(diff < 0){
+                    low = mid + 1;
+                }else{
+                    high = mid - 1;
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -231,16 +330,20 @@ int indexOf(List *list, void *value){
  * NOTE that this function uses binary search and not having a sorted list will lead to errors.
  */
 int closestIndexOf(List *list, void *value){
+    if(list->size == 0){
+        return 0;
+    }
+
     int low = 0, high = list->size - 1, mid, diff;
 
     while(1){
-        if(cmpVal(list->data + low, value, list->dType) > 0){
+        if(cmpVal(list->data + (low * list->eSize), value, list) > 0){
             return low;
-        }else if(cmpVal(list->data + high, value, list->dType) < 0){
+        }else if(cmpVal(list->data + (high * list->eSize), value, list) < 0){
             return high + 1;
         }else{
             mid = (high + low) >> 1;
-            diff = cmpVal(list->data + mid, value, list->dType);
+            diff = cmpVal(list->data + (mid * list->eSize), value, list);
             if(!diff){
                 return mid;
             }else if(diff < 0){
@@ -262,55 +365,12 @@ int closestIndexOf(List *list, void *value){
  * NOTE: In the case the list is of strings, it will use the strcmp() function to compare the strings.
  * NOTE: In the case the list is of lists, it will compare the pointer values of each List to determine identicality.
  */
-int cmpVal(void *a, void *b, int flag){
-    int diff;
-
-    switch(flag){
-        case 0:
-            diff = *((int *)a) - *((int *)b);
-            break;
-        case 1:
-            diff = (int) (*((long *)a) - *((long *)b));
-            break;
-        case 2:
-            {float diffVal = *((float *) a) - *((float *) b);
-            if(diffVal > -0.0000001 && diffVal < 0.0000001){
-                diff = 0;
-            }else if (diffVal <= -0.0000001){
-                diff = ((int) diffVal) - 1;
-            }else{
-                diff = ((int) diffVal) + 1;
-            }}
-            break;
-        case 3:
-            {double diffVal = *((double *) a) - *((double *) b);
-            if(diffVal > -0.0000001 && diffVal < 0.0000001){
-                diff = 0;
-            }else if (diffVal <= -0.0000001){
-                diff = ((int) diffVal) - 1;
-            }else{
-                diff = ((int) diffVal) + 1;
-            }}
-            break;
-        case 4:
-            diff = (int) (*((char *) a) - *((char *) b));
-            break;
-        case 5:
-            diff = strcmp(*((char **) a), *((char **) b));
-            break;
-        case 6:
-            if(*((List **) a) == *((List **) b)){
-                diff = 0;
-            }else if(*((List **) a) < *((List **) b)){
-                diff = -1;
-            }else{
-                diff = 1;
-            }
-        default:
-            return 0;
+int cmpVal(void *a, void *b, List *list){
+    if(list->cmp == NULL){
+        return memcmp(a, b, list->eSize);
+    }else{
+        return list->cmp(a, b);
     }
-    
-    return diff;
 }
 
 /**
@@ -321,23 +381,8 @@ int cmpVal(void *a, void *b, int flag){
  * 
  * NOTE: Function will cause an exit in the case mallocing the list or the data results in a NULL pointer.
  */
-List *createDataList(int len, char *type){
+List *createDataList(int len, size_t size, int (*cmp)(void *, void *)){
     if(len <= 0) return NULL;
-
-    char flag;
-
-    char i;
-
-    for(i = 0; i < 7; ++i){
-        if(!strcmp(type, *(types + i))){
-            flag = i;
-            break;
-        }
-    }
-
-    if(i == 7){
-        return NULL;
-    }
 
     List *list = (List *) calloc(1,sizeof(List));
 
@@ -346,22 +391,7 @@ List *createDataList(int len, char *type){
         exit(0);
     }
 
-    switch(flag){
-        case 0:
-            list->data = calloc(1,sizeof(int) * len);
-        case 1:
-            list->data = calloc(1,sizeof(long) * len);
-        case 2:
-            list->data = calloc(1,sizeof(float) * len);
-        case 3:
-            list->data = calloc(1,sizeof(double) * len);
-        case 4:
-            list->data = calloc(1,sizeof(char) * len);
-        case 5:
-            list->data = calloc(1,sizeof(char *) * len);
-        case 6:
-            list->data = calloc(1,sizeof(List *) * len);
-    }
+    list->data = (char *) calloc(len, size);
 
     if(list->data == NULL){
         printf("An error occurred with malloc in createDataList on setting the data list. Exiting.\n");
@@ -370,7 +400,8 @@ List *createDataList(int len, char *type){
 
     list->size = 0;
     list->len = len;
-    list->dType = flag;
+    list->eSize = size;
+    list->cmp = cmp;
 
     return list;
 }
@@ -385,78 +416,7 @@ List *createDataList(int len, char *type){
 void deleteDataList(List *list){
     if(list == NULL) return;
 
-    switch(list->dType){
-        case 0:
-        case 1:
-        case 2:
-        case 3:
-        case 4:
-            free(list->data);
-            break;
-        case 5:
-            while(list->size > 0){
-                char **val = ((char **) removeRet(list, 0));
-                if(val != NULL){
-                    free(*val);
-                    free(val);
-                }
-            }
-            free(list->data);
-            break;
-        case 6:
-            while(list->size > 0){
-                List **l = ((List **) removeRet(list, 0));
-                if(l != NULL){
-                    deleteDataList(*l);
-                    free(l);
-                }
-            }
-            free(list->data);
-            break;
-    }
-
+    
+    free(list->data);
     free(list);
-}
-
-/**
- * 
- */
-void copyVal(void *src, void *trg, int flag){
-    if(src == NULL || trg == NULL) return;
-
-    switch(flag){
-        case 0:
-            *((int *) trg) = *((int *) src);
-        case 1:
-            *((long *) trg) = *((long *) src);
-        case 2:
-            *((float *) trg) = *((float *) src);
-        case 3:
-            *((double *) trg) = *((double *) src);
-        case 4:
-            *((char *) trg) = *((char *) src);
-        case 5:
-            *((char **) trg) = *((char **) src);
-        case 6:
-            *((List **) trg) = *((List **) src);
-    }
-}
-
-size_t sizeType(int flag){
-    switch(flag){
-        case 0:
-            return sizeof(int);
-        case 1:
-            return sizeof(long);
-        case 2:
-            return sizeof(float);
-        case 3:
-            return sizeof(double);
-        case 4:
-            return sizeof(char);
-        case 5:
-            return sizeof(char *);
-        case 6:
-            return sizeof(List *);
-    }
 }
