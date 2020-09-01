@@ -5,12 +5,11 @@
  * 
  * Date: 5/24/2020
  * 
- * Data last edited: 7/3/2020
+ * Data last edited: 7/5/2020
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "list.h"
 #include "data.h"
 
 /**
@@ -29,12 +28,13 @@ Data *createData(){
     Data *data = (Data *) calloc(1,sizeof(Data));
 
     if(data != NULL){
-        data->cls = createDataList(100, sizeof(int), NULL);
+        data->cls = createDataList(100, sizeof(int), NULL, NULL);
         if(data->cls != NULL){
-            data->uFeats = createDataList(90000, sizeof(int), intCmp);
+            data->uFeats = createDataList(1000, sizeof(double), dblCmp, NULL);
             if(data->uFeats != NULL){
-                data->feats = createDataList(100,sizeof(List *),NULL);
+                data->feats = createDataList(100,sizeof(List *),NULL, listDestroyer);
                 if(data->feats == NULL){
+                    printf("Failed\n");
                     deleteData(data);
                     return NULL;
                 }
@@ -64,15 +64,82 @@ Data *createData(){
 void deleteData(Data *data){
     if(data == NULL) return;
 
-    int i;
-
-    for(i = 0; i < data->numEntries; i++){
-        deleteDataList(*((List **) get(data->feats, i)));
-    }
-
     deleteDataList(data->feats);
     deleteDataList(data->cls);
     deleteDataList(data->uFeats);
 
     free(data);
+}
+
+DataPack *createDataPack(){
+    DataPack *datapack = (DataPack *) calloc(sizeof(DataPack),1);
+    if(datapack != NULL){
+        datapack->train = createData();
+        if(datapack->train != NULL){
+            datapack->train->feats->destroy = NULL;
+            datapack->valid = createData();
+            if(datapack->valid != NULL){
+                datapack->valid->feats->destroy = NULL;
+                return datapack;
+            }
+        }
+    }
+
+    return NULL;
+}
+void deleteDataPack(void *datapack){
+    if(datapack == NULL) return;
+
+    deleteData((*((DataPack **)datapack))->train);
+    deleteData((*((DataPack **)datapack))->valid);
+    free(*((DataPack **)datapack));
+}
+
+List *createCrossVal(Data *data, int folds){
+    if(folds < 2 || folds > data->numEntries) return NULL;
+
+    List *crossVals = createDataList(folds, sizeof(DataPack *), NULL, deleteDataPack);
+
+    if(crossVals != NULL){
+        int s = data->numEntries / folds;
+        int i = 0;
+        for(; i < folds; i++){
+            DataPack * dp= createDataPack();
+            if(dp == NULL){
+                printf("Failed to make datapack. Exiting.\n");
+                exit(0);
+            }
+
+            dp->train->numEntries = data->numEntries - s;
+            dp->valid->numEntries = s;
+            append(crossVals, &dp);
+        }
+
+        int j = -1;
+        int k = 0;
+        for(i = 0; i < data->numEntries; i++){
+            if(i % s == 0){
+                j++;
+            }
+            
+            for(k = 0; k < folds; k++){
+                if(k == j){
+                    append((*((DataPack **)get(crossVals,k)))->valid->feats, get(data->feats, i));
+                    append((*((DataPack **)get(crossVals,k)))->valid->cls, get(data->cls, i));
+                }else{
+                    append((*((DataPack **)get(crossVals,k)))->train->feats, get(data->feats, i));
+                    append((*((DataPack **)get(crossVals,k)))->train->cls, get(data->cls, i));
+                }
+            }
+        }
+    }
+    return crossVals;
+}
+void deleteCrossVal(List *crossVals){
+    if(crossVals == NULL || crossVals->data == NULL) return;
+
+    int i = 0;
+    for(;i < crossVals->size;i++){
+
+    }
 }

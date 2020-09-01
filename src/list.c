@@ -5,11 +5,12 @@
  * 
  * Date Created: 5/24/2020
  * 
- * Date Last Edited: 7/3/2020
+ * Date Last Edited: 7/5/2020
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include "list.h"
 
@@ -34,7 +35,18 @@ int intCmp(void *a, void *b){
  * 
  */
 int dblCmp(void *a, void *b){
-    return (int) (*((double *)a) - *((double *)b));
+    return (int) ((*((double *)a) - *((double *)b)));
+}
+
+/**
+ * 
+ */
+void listDestroyer(void *element){
+    if(element == NULL) return;
+
+    List *list = *((List **) element);
+
+    deleteDataList(list);
 }
 
 /**
@@ -381,7 +393,7 @@ int cmpVal(void *a, void *b, List *list){
  * 
  * NOTE: Function will cause an exit in the case mallocing the list or the data results in a NULL pointer.
  */
-List *createDataList(int len, size_t size, int (*cmp)(void *, void *)){
+List *createDataList(int len, size_t size, int (*cmp)(void *, void *), void (*destroy)(void *)){
     if(len <= 0) return NULL;
 
     List *list = (List *) calloc(1,sizeof(List));
@@ -402,6 +414,7 @@ List *createDataList(int len, size_t size, int (*cmp)(void *, void *)){
     list->len = len;
     list->eSize = size;
     list->cmp = cmp;
+    list->destroy = destroy;
 
     return list;
 }
@@ -416,7 +429,14 @@ List *createDataList(int len, size_t size, int (*cmp)(void *, void *)){
 void deleteDataList(List *list){
     if(list == NULL) return;
 
-    
+    char *arr = list->data;
+    if(list->destroy != NULL){
+        int i = 0;
+        for(;i < list->size; i++, arr += list->eSize){
+            list->destroy(arr);
+        }
+    }
+
     free(list->data);
     free(list);
 }

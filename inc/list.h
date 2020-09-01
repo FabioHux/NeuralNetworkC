@@ -1,8 +1,12 @@
+#ifndef LIST_CONST
+#define LIST_CONST
+
 #include <stdlib.h>
 
 typedef struct{
     void *data;
     int (*cmp)(void *, void *);
+    void (*destroy)(void *);
     int size, len;
     int eSize;
 } List;
@@ -10,6 +14,9 @@ typedef struct{
 
 int intCmp(void *a, void *b);
 int dblCmp(void *a, void *b);
+void listDestroyer(void *element);
+
+
 char append(List *list, void *value);
 char insert(List *list, void *value, int index);
 char insertSorted(List *list, void *value);
@@ -23,4 +30,6 @@ void deleteDataList(List *list);
 int closestIndexOf(List *list, void *value);
 
 
-List *createDataList(int len, size_t size, int (*cmp)(void *, void *));
+List *createDataList(int len, size_t size, int (*cmp)(void *, void *), void (*destroy)(void *));
+
+#endif

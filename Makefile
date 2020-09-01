@@ -6,8 +6,8 @@
 # Choose a compiler and its options
 #--------------------------------------------------------------------------
 CC   = gcc
-OPTS = -Ofast -Wall -lm -pthread
-DEBUG = -g
+OPTS = -Ofast -lm -g
+DEBUG = 
 
 #--------------------------------------------------------------------------
 # Add the names of the directories (Add them after each ./)
@@ -29,6 +29,7 @@ SRCS=$(SRCDIR)/main.c \
 	$(SRCDIR)/list.c \
 	$(SRCDIR)/data.c \
 	$(SRCDIR)/neural.c \
+	$(SRCDIR)/matrix.c \
 	$(SRCDIR)/preproc.c
 
 #--------------------------------------------------------------------
@@ -47,10 +48,10 @@ TARGET = $(BINDIR)/main.exe
 all: $(TARGET)
 
 $(TARGET): $(OBJS) 
-	${CC} ${CFLAGS} -o $@ $(OBJS)
+	${CC} -o $@ $(OBJS) ${CFLAGS}
 
 $(OBJS): $(OBJDIR)/%.o : $(SRCDIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -c $< -o $@ ${CFLAGS}
 
 #--------------------------------------------------------------------
 # This clean target will remove all the object files, but

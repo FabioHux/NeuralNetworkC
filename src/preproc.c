@@ -1,12 +1,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "list.h"
 #include "data.h"
 #include "preproc.h"
 
 List *getDocFreq(Data *data){
-    List *featCount = createDataList(data->uFeats->size, sizeof(int), NULL);
+    List *featCount = createDataList(data->uFeats->size, sizeof(int), NULL, NULL);
 
     if(featCount == NULL){
         return NULL;
@@ -51,22 +50,30 @@ Data *extractData(char *filename){
     }
 
     while(fgets(line, 40000,f) != NULL){
-        List *l = createDataList(200, sizeof(int), intCmp);
-        append(data->feats, &l);
+        //printf("Here\n");
+        List *l = createDataList(200, sizeof(double), dblCmp, NULL);
+        if(l == NULL){
+            printf("\tFailed??");
+        }
+        if(!append(data->feats, &l)){
+            printf("\tDidn't tho???");
+        }
         int num = *line - '0';
         append(data->cls, &num);
 
         num = 0;
+        double dnum = 0;
         char *chr = line + 1;
         while(*(++chr) != '\n'){
             if(*chr != ' '){
                 num = (num<<3) + (num<<1) + *chr - '0';
             }else{
-                insertSorted(l, &num);
+                dnum = num;
+                insertSorted(l, &dnum);
                 //append(l, &num);
-                int propInd = closestIndexOf(data->uFeats, &num);
-                if(propInd >= data->uFeats->size || *((int *) get(data->uFeats, propInd)) != num){
-                    insert(data->uFeats, &num, propInd);
+                int propInd = closestIndexOf(data->uFeats, &dnum);
+                if(propInd >= data->uFeats->size || *((double *) get(data->uFeats, propInd)) != dnum){
+                    insert(data->uFeats, &dnum, propInd);
                 }
                 num = 0;
             }
@@ -95,25 +102,26 @@ int binTransform(Data *data, float low, float high){
         }
         deleteDataList(docFreq);
 
-        List *repL = createDataList(data->uFeats->size, sizeof(int), NULL);
+        List *repL = createDataList(data->uFeats->size, sizeof(double), NULL, NULL);
 
-        int j = 0;
+        double k = 0;
         if(repL == NULL){
             printf("Error occurred in binTransform. Exiting.\n");
             exit(0);
         }else{
             for(i = 0; i < repL->len; i++){
-                append(repL, &j);
+                append(repL, &k);
             }
         }
-
+        
+        int j;
         for(i = 0; i < data->numEntries; i++){
             List *list = *((List **) get(data->feats, i));
             for(j = 0; j < repL->size; j++){
                 if(indexOf(list, get(data->uFeats, j)) == -1){
-                    *((int *) get(repL, j)) = 0;
+                    *((double *) get(repL, j)) = 0;
                 }else{
-                    *((int *) get(repL, j)) = 1;
+                    *((double *) get(repL, j)) = 1;
                 }
             }
 
@@ -123,7 +131,7 @@ int binTransform(Data *data, float low, float high){
             }
 
             for(j = 0; j < minSize; j++){
-                *((int *) get(list, j)) = *((int *) get(repL, j));
+                *((double *) get(list, j)) = *((double *) get(repL, j));
             }
 
             if(minSize < repL->size){
@@ -133,10 +141,7 @@ int binTransform(Data *data, float low, float high){
             }else{
                 list->size = repL->size;
             }
-
-
         }
-
         deleteDataList(repL);
     }else{
         return 0;
