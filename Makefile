@@ -6,8 +6,8 @@
 # Choose a compiler and its options
 #--------------------------------------------------------------------------
 CC   = gcc
-OPTS = -Ofast -lm -g
-DEBUG = 
+OPTS = -Ofast -lm 
+DEBUG = -g
 
 #--------------------------------------------------------------------------
 # Add the names of the directories (Add them after each ./)

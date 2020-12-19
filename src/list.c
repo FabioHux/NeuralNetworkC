@@ -5,7 +5,7 @@
  * 
  * Date Created: 5/24/2020
  * 
- * Date Last Edited: 7/5/2020
+ * Date Last Edited: 10/12/2020
  */
 
 #include <stdio.h>
@@ -13,6 +13,16 @@
 #include <math.h>
 #include <string.h>
 #include "list.h"
+
+#define ADDR(LIST, IND) LIST->data + (IND * LIST->eSize)
+
+struct _list{
+    void *data;
+    int (*cmp)(void *, void *);
+    void (*destroy)(void *);
+    int size, len;
+    int eSize;
+};
 
 void insertionResize(List *list);
 void shiftOneRight(char *start, long offset, char *stop);
@@ -25,7 +35,7 @@ void shiftOneLeft(char *start, long offset, char *stop);
  * 
  */
 int intCmp(void *a, void *b){
-    return *((int *)a) - *((int *)b);
+    return LIST_DER(int, a) - LIST_DER(int, b);
 }
 
 /**
@@ -35,7 +45,7 @@ int intCmp(void *a, void *b){
  * 
  */
 int dblCmp(void *a, void *b){
-    return (int) ((*((double *)a) - *((double *)b)));
+    return (int) (LIST_DER(double, a) - LIST_DER(double,b));
 }
 
 /**
@@ -44,9 +54,9 @@ int dblCmp(void *a, void *b){
 void listDestroyer(void *element){
     if(element == NULL) return;
 
-    List *list = *((List **) element);
+    List *list = LIST_DER(List *, element);
 
-    deleteDataList(list);
+    listDestroy(list);
 }
 
 /**
@@ -56,12 +66,12 @@ void listDestroyer(void *element){
  * 
  * Will return a 0 or 1 on failure or success, respectively. Function will exit the program in the event that it cannot reallocate space for the list.
  */
-char append(List *list, void *value){
+char listAppend(List *list, void *value){
     if(list->size == list->len){
         insertionResize(list);
     }
 
-    return set(list, list->size++, value);
+    return listSet(list, list->size++, value);
 }
 
 /**
@@ -127,11 +137,11 @@ void shiftOneLeft(char *start, long offset, char *stop){
  * 
  * Will return a 0 or 1 on failure or success, respectively. Function will exit the program in the event that it cannot reallocate space for the list.
  */
-char insert(List *list, void *value, int index){
+char listInsert(List *list, void *value, int index){
     if(index > list->size || index < 0){
         return 0;
     }else if(index == list->size){
-        return append(list, value);
+        return listAppend(list, value);
     }else{
         if(list->size == list->len){
             insertionResize(list);
@@ -146,11 +156,11 @@ char insert(List *list, void *value, int index){
             //set(list, i, list->data + ((i - 1)*list->eSize));
         }*/
         
-        char *stop = (char *) list->data + ((index) * list->eSize);
-        char *start = (char *) list->data + ((list->size++) * list->eSize) - 8;
+        char *stop = (char *) ADDR(list, index);
+        char *start = (char *) ADDR(list, (list->size++)) - 8;
         shiftOneRight(start, list->eSize, stop);
 
-        return set(list, index, value);
+        return listSet(list, index, value);
     }
 }
 
@@ -161,10 +171,12 @@ char insert(List *list, void *value, int index){
  * 
  * Will return a 0 or 1 on failure or success, respectively, Function will exit the program in the event that it cannot reallocate space for the list.
  */
-char insertSorted(List *list, void *value){
-    int index = closestIndexOf(list, value);
+char listInsertSorted(List *list, void *value){
+    int index = listIndexOf(list, value);
 
-    return insert(list, value, index);
+    if(index < 0) index = ~index;
+
+    return listInsert(list, value, index);
 }
 
 /**
@@ -196,7 +208,7 @@ void insertionResize(List *list){
  * 
  * EXAMPLE: List of ints: {0, 1, 2, 3, 4}. Element at index 2 is removed. Return: void * -> [2], Updated List: {0, 1, 3, 4}. How to access the value: dereference given pointer.
  */
-void *removeRet(List *list, int index){
+void *listRemoveRet(List *list, int index){
     if(index < 0 || index >= list->size){
         return NULL;
     }
@@ -208,16 +220,14 @@ void *removeRet(List *list, int index){
         exit(0);
     }
 
-    char *start = (char *) list->data + (index * list->eSize);
+    char *start = (char *) ADDR(list, index);
 
     memcpy(value, start, list->eSize);
 
-    if(index < list->size - 1){
-        char *stop = (char *) list->data + ((--list->size) * list->eSize);
+    if(index < list->size-- - 1){
+        char *stop = (char *) ADDR(list, list->size);
 
         shiftOneLeft(start, list->eSize, stop);
-    }else{
-        --list->size;
     }
 
     //list->size--;
@@ -259,12 +269,12 @@ void *removeRet(List *list, int index){
  * 
  * NOTE: Function is dangerous as it is a direct access of the data list and any manipulation would result in the manipulation of data of the given list.
  */
-void *get(List *list, int index){
+void *listGet(List *list, int index){
     if(index < 0 || index >= list->size){
         return NULL;
     }
 
-    return list->data + (index * list->eSize);
+    return ADDR(list, index);
 }
 
 /**
@@ -273,12 +283,12 @@ void *get(List *list, int index){
  * Function will return a 0 or 1 on the failure or success of the operation, respectively.
  * NOTE: In the case the list is that of strings or nested lists, performing this function will free the memory of the original values before setting it to the new value.
  */
-char set(List *list, int index, void *value){
+char listSet(List *list, int index, void *value){
     if(index >= list->size || index < 0){
         return 0;
     }
 
-    memcpy(list->data + (index * list->eSize), value, list->eSize);
+    memcpy(ADDR(list, index), value, list->eSize);
     
     return 1;
 }
@@ -291,7 +301,7 @@ char set(List *list, int index, void *value){
  * NOTE: This function uses binary search and not having a sorted list will lead to errors. It is suggested that a manual iteration is done to search for the index instead.
  * In this case, it would mean that if one were to search for the index of a List, it would attempt to search it by the address of the pointer.
  */
-int indexOf(List *list, void *value){
+int listIndexOf(List *list, void *value){
     /*int index = closestIndexOf(list, value);
    
     if(index >= list->size || (list->cmp == NULL && memcmp(list->data + (index * list->eSize), value, list->eSize)) || list->cmp(list->data + (index * list->eSize), value)){
@@ -300,40 +310,52 @@ int indexOf(List *list, void *value){
 
     return index;*/
 
+    
     if(list->size == 0){
-        return -1;
+        return 0;
     }
 
     int low = 0, high = list->size - 1, mid, diff;
+    void *lAddr = ADDR(list, low), *hAddr = ADDR(list, high); 
 
     while(1){
-        diff = cmpVal(list->data + (low * list->eSize), value, list);
-        if(diff > 0){
-            return -1;
-        }else if(!diff){
-            return low;
+        if(listCmpVal(lAddr, value, list) > 0){
+            return ~low;
+        }else if(listCmpVal(hAddr, value, list) < 0){
+            return ~(high + 1);
         }else{
-            diff = cmpVal(list->data + (high * list->eSize), value, list);
-            if(diff < 0){
-                return -1;
-            }else if(!diff){
-                return high;
+            mid = (high + low) >> 1;
+            diff = listCmpVal(ADDR(list, mid), value, list);
+            if(!diff){
+                return mid;
+            }else if(diff < 0){
+                low = mid + 1;
+                lAddr = ADDR(list, low);
             }else{
-                mid = (high + low) >> 1;
-                diff = cmpVal(list->data + (mid * list->eSize), value, list);
-                if(!diff){
-                    return mid;
-                }else if(diff < 0){
-                    low = mid + 1;
-                }else{
-                    high = mid - 1;
-                }
+                high = mid - 1;
+                hAddr = ADDR(list, high);
             }
         }
     }
 }
 
+int listGetSize(List *list){
+    if(list == NULL){
+        return -1;
+    } 
+    return list->size;
+}
+
+
+int listGetESize(List *list){
+    if(list == NULL){
+        return -1;
+    } 
+    return list->eSize;
+}
+
 /**
+ * DO NOT USE
  * Function to find the index of a given value in the list or the index with which it is preferable to insert the given value to the list.
  * 
  * Function is identical in use as indexOf() (see indexOf()) with the exception that instead of return -1 on failure for searching, it will instead return the index to potentially insert the given value into the given list.
@@ -342,29 +364,7 @@ int indexOf(List *list, void *value){
  * NOTE that this function uses binary search and not having a sorted list will lead to errors.
  */
 int closestIndexOf(List *list, void *value){
-    if(list->size == 0){
-        return 0;
-    }
-
-    int low = 0, high = list->size - 1, mid, diff;
-
-    while(1){
-        if(cmpVal(list->data + (low * list->eSize), value, list) > 0){
-            return low;
-        }else if(cmpVal(list->data + (high * list->eSize), value, list) < 0){
-            return high + 1;
-        }else{
-            mid = (high + low) >> 1;
-            diff = cmpVal(list->data + (mid * list->eSize), value, list);
-            if(!diff){
-                return mid;
-            }else if(diff < 0){
-                low = mid + 1;
-            }else{
-                high = mid - 1;
-            }
-        }
-    }
+    return 0;
 }
 
 /**
@@ -377,7 +377,7 @@ int closestIndexOf(List *list, void *value){
  * NOTE: In the case the list is of strings, it will use the strcmp() function to compare the strings.
  * NOTE: In the case the list is of lists, it will compare the pointer values of each List to determine identicality.
  */
-int cmpVal(void *a, void *b, List *list){
+int listCmpVal(void *a, void *b, List *list){
     if(list->cmp == NULL){
         return memcmp(a, b, list->eSize);
     }else{
@@ -393,7 +393,7 @@ int cmpVal(void *a, void *b, List *list){
  * 
  * NOTE: Function will cause an exit in the case mallocing the list or the data results in a NULL pointer.
  */
-List *createDataList(int len, size_t size, int (*cmp)(void *, void *), void (*destroy)(void *)){
+List *listCreate(int len, size_t size, int (*cmp)(void *, void *), void (*destroy)(void *)){
     if(len <= 0) return NULL;
 
     List *list = (List *) calloc(1,sizeof(List));
@@ -426,7 +426,7 @@ List *createDataList(int len, size_t size, int (*cmp)(void *, void *), void (*de
  * 
  * NOTE: For the case of the list being of type string or list, the function will free each string or call deleteDataList for each list within the list, respectively.
  */
-void deleteDataList(List *list){
+void listDestroy(List *list){
     if(list == NULL) return;
 
     char *arr = list->data;

@@ -14,7 +14,7 @@ void update(NeuralNetwork *network);
 void desMatWrap(void *matrix){
     if(matrix == NULL) return;
 
-    destroyMatrix(*((Matrix **) matrix), 0);
+    matrixDestroy(LIST_DER(Matrix *, matrix), 0);
 }
 
 List *matrixify(List *entries);
@@ -26,43 +26,47 @@ double invSigmoid(Matrix *vector);
 double randDouble(double low, double high);
 
 int outToInt(Matrix *output){
-    int len = output->m * output->n;
-    int val = 0;
-    int i = 0;
-    double *value = output->mat;
-
-    for(;i < len; i++){
-        if(*value > .5){
-            val += 1 << i;
-        }
+    if(output == NULL) return -1;
+    
+    matrixResetIter(output);
+    
+    int i = 0, val = 0;
+    double value;
+    
+    while(!isnan(value = matrixGetNext(output, -1))){
+        val += 1 << (i++);
     }
-
+    
     return val;
 }
 
 void sigmoid(Matrix *matrix){
-    double *val = matrix->mat;
-    double *stop = val + (matrix->m * matrix->n);
-
-    while(val < stop){
-        *val = 1.0 / (1.0 + exp(-*val));
-        if(isnan(*val)){
+    if(matrix == NULL) return;
+    
+    matrixResetIter(matrix);
+    
+    double value;
+    
+    while(!isnan(value = matrixGetNext(matrix, -1))){
+        value = 1.0 / (1.0 + exp(-value));
+        if(isnan(value)){
             printf("bad nums\n");
+            value = 0;
         }
-        val++;
+        matrixSetPrevious(matrix, value);
     }
 }
 
 double invSigmoid(Matrix *vector){
-    double sum = 0;
-    double *val = vector->mat;
-    double *stop = val + (vector->m * vector->n);
-
-    while(val < stop){
-        sum += *val * (1 - *val);
-        val++;
+    if(vector == NULL) return NAN;
+    
+    double sum = 0, value;
+    
+    matrixResetIter(vector);
+    
+    while(!isnan(value = matrixGetNext(vector, -1))){
+        sum += value * (1 - value);
     }
-
     return sum;
 }
 

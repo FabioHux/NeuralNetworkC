@@ -24,7 +24,7 @@ int testing(){
         }
     }
 
-    for(i = 0; i < list->size; i++){
+    for(i = 0; i < listGetSize(list); i++){
         printf("Value at %d: %s\n", i, *((char **) get(list, i)));
     }
 
@@ -34,10 +34,10 @@ int testing(){
 void printList(List *list){
     int i = 0;
 
-    printf("%lf", *((double *)(list->data) + i));
+    printf("%lf", DER(double, get(list, i)));
 
-    while(++i < list->size){
-        printf(",%lf", *((double *)(list->data) + i));
+    while(++i < listGetSize(list)){
+        printf(",%lf", DER(double, get(list, i)));
     }
 
     printf("\n");
@@ -144,6 +144,7 @@ int main(){
     //return 0;
     clock_t secs;    
     secs = clock();
+    printf("Hi");
 
     Data *data = extractData("training.txt");
     binTransform(data, .025, .08);
@@ -153,20 +154,20 @@ int main(){
     double average = 0;
     for(int i = 0; i < numCV; i++){
         printf("***BEGINNING CROSSVAL %d***\n\n***TRAINING NETWORK***\n\n",i);
-        int layers[] = {(*((List **) get(data->feats, 0)))->size,10,10,10,10,10,1};
+        int layers[] = {listGetSize(LIST_DER(List *, listGet(data->feats, 0))),10,10,10,10,10,1};
         NeuralNetwork *network = createNN(layers, 7, 0.04, 200, .1, 0, "output.json", (int) clock());
-        trainNetwork(network, (*((DataPack **) get(crossVals, i)))->train);
+        trainNetwork(network, (LIST_DER(DataPack *, listGet(crossVals, i)))->train);
         printf("\n***NETWORK TRAINED. TESTING NETWORK***\n\n");
-        List *results = classifyNetwork(network, (*((DataPack **) get(crossVals, i)))->valid);
-        double score = f1Score((*((DataPack **) get(crossVals, i)))->valid->cls, results);
+        List *results = classifyNetwork(network, (LIST_DER(DataPack *, listGet(crossVals, i)))->valid);
+        double score = f1Score((LIST_DER(DataPack *, listGet(crossVals, i)))->valid->cls, results);
         average += score;
         printf("\n***RESULTING SCORE: %.3lf***\n\n***ENDED***\n\n", score);
-        deleteDataList(results);
+        listDestroy(results);
         destroyNN(network);
     }
     printf("\n***FINAL AVERAGE RESULT: %.3lf***\n\n",average/numCV);
-    printf("%d\n", (*((List **) get(data->feats, 0)))->size);
-    deleteDataList(crossVals);
+    printf("%d\n", listGetSize(LIST_DER(List *, listGet(data->feats, 0))));
+    listDestroy(crossVals);
     deleteData(data);
 
     printf("\nTime to complete: %lf\n", (double)(clock()-secs) / CLOCKS_PER_SEC);

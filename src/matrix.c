@@ -1,6 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include "matrix.h"
+
+struct _matrix{
+    double *mat, *matEnd, *matIter;
+    int n, m;
+};
 
 //Private helper functions
 void addOp(double *target, double value){
@@ -15,62 +21,110 @@ void setOp(double *target, double value){
     *target = value;
 }
 
+int matrixGetM(Matrix *a){
+    if(a == NULL)
+        return -1;
+    return a->m;
+}
 
-Matrix *matMul(Matrix *a, Matrix *b, Matrix *c, char flags){
-    if(a == NULL || b == NULL) return NULL;
+int matrixGetN(Matrix *a){
+    if(a == NULL)
+        return -1;
+    return a->n;
+}
+double matrixGetValue(Matrix *a, int n, int m){
+    if(a == NULL || n < 0 || m < 0 || n >= a->n || m >= a->m)
+        return NAN;
+    return *(a->mat + (n * a->m) + m);
+}
 
-    int aStep = a->m, bStep = 1, cStep = 1, aOff = 1, bOff = b->m, cOff = 0, aEnd = a->n, bEnd = b->m;
-    double *aMat = a->mat, *bMat = b->mat, *cMat = c->mat, *aStop = aMat + a->m;
-    void (*op)(double *, double);
+void matrixSetValue(Matrix *a, int n, int m, double value){
+    if(a != NULL && !isnan(value) && n >= 0 && m >= 0 && n < a->n && m < a->m)
+        *(a->mat + (n * a->m) + m) = value;
+}
 
-    if(flags & 1){
-        aStep = 1;
-        aOff = a->m;
-        aEnd = a->m;
-        aStop = aMat + (a->m * a->n);
+double matrixGetNext(Matrix *a, int index){
+    if(a == NULL) return NAN;
+    
+    if(index == -1){
+        if(a->matIter != a->matEnd){
+            return *(a->matIter++);
+        }else{
+            a->matIter = a->mat;
+        }
+    }else if(index >= 0 && index < a->n * a->m){
+        a->matIter = a->mat + index;
+        return *(a->matIter++);
     }
-    if(flags & 2){
-        bStep = b->m;
-        bOff = 1;
-        bEnd = b->n;
+    
+    return NAN;
+}
+
+void matrixResetIter(Matrix *a){
+    if(a != NULL) a->matIter = a->mat;
+}
+
+
+void matrixSetPrevious(Matrix *a, double value){    
+    if(a != NULL && !isnan(value) && a->matIter > a->mat && a->matIter <= a->matEnd){
+        *(a->matIter - 1) = value;
     }
+}
+
+
+
+
+Matrix *matrixMul(Matrix *a, Matrix *b, Matrix *c, char flags){
+    if(a == NULL || b == NULL || c == NULL) return NULL;
+    
+    int aLStep = a->m, aDStep = 1, bLStep = 1, bDStep = b->m, cLStep = 1, cRStep = 0;
+    double *aMat = a->mat, *bMat = b->mat, *cMat = c->mat, *aStop = a->matEnd, *bStop = b->matEnd, *aHalt = aMat + aLStep;
+    void (*op)(double *, double) = setOp;
+    
     if(flags & 4){
-        cStep = c->m;
-        cOff = (c->m * c->n) - 1;
-        if(aEnd != c->m || bEnd != c->n){
-            printf("I dipped matMul.\n");
+        cLStep = c->m;
+        cRStep = (cLStep * c->n) - 1;
+        if((flags & 1 && aLStep != cLStep) || (!(flags & 1) && a->n != cLStep) ||(flags & 2 && b->n != c->n) || (!(flags & 2) && bDStep != c->n)){
             return NULL;
         }
-    }else if(aEnd != c->n || bEnd != c->m){
-        printf("I dipped2 matMul.\n");
+    }else if((flags & 1 && aLStep != c->n) || (!(flags & 1) && a->n != c->n) ||(flags & 2 && b->n != c->m) || (!(flags & 2) && bDStep != c->m)){
         return NULL;
     }
-
+    
+    if(flags & 1){
+        aDStep = aLStep;
+        aLStep = 1;
+        aHalt = aStop;
+        aStop = aMat + aDStep;
+    }
+    
+    if(flags & 2){
+        bLStep = bDStep;
+        bDStep = 1;
+        bStop = bMat + b->n;
+    }
+    
     if(flags & 8){
-        if(flags == 24){
+        if(flags & 24){
             return NULL;
         }
         op = addOp;
     }else if(flags & 16){
         op = subOp;
-    }else{
-        op = setOp;
     }
-
-
-    int i,j;
     
-    for(i = 0; i < aEnd; i++, cMat -= cOff, aMat += aStep, bMat = b->mat, aStop += aStep){
-        for(j = 0; j < bEnd; j++, bMat += bStep, cMat += cStep){
-            op(cMat, dotProd(aMat, aOff, bMat, bOff, aStop));
-            //*cMat = dotProd(aMat, aOff, bMat, bOff, aStop);
+    for(;aMat < aStop; aMat += aLStep, aHalt += aLStep){
+        for(bMat = b->mat; bMat < bStop; bMat += bLStep){
+            op(cMat, dotProd(aMat, aDStep, bMat, bDStep, aHalt));
+            cMat += cLStep;
         }
+        cMat -= cRStep;
     }
-
+    
     return c;
 }
 
-Matrix *matAdd(Matrix *a, Matrix *b, Matrix *c, char flags){
+Matrix *matrixAdd(Matrix *a, Matrix *b, Matrix *c, char flags){
     if(a == NULL || b == NULL || c == NULL) return NULL;
     int aStep = 1, bStep = 1, cStep = 1, aOff = 0, bOff = 0, cOff = 0, n = c->n, m = c->m;
     double *aMat = a->mat, *bMat = b->mat, *cMat = c->mat;
@@ -117,7 +171,7 @@ Matrix *matAdd(Matrix *a, Matrix *b, Matrix *c, char flags){
 }
 
 
-Matrix *matSub(Matrix *a, Matrix *b, Matrix *c, char flags){
+Matrix *matrixSub(Matrix *a, Matrix *b, Matrix *c, char flags){
     if(a == NULL || b == NULL || c == NULL) return NULL;
     int aStep = 1, bStep = 1, cStep = 1, aOff = 0, bOff = 0, cOff = 0, n = c->n, m = c->m;
     double *aMat = a->mat, *bMat = b->mat, *cMat = c->mat;
@@ -163,7 +217,7 @@ Matrix *matSub(Matrix *a, Matrix *b, Matrix *c, char flags){
     return c;
 }
 
-Matrix *createMatrix(int n, int m, double *values, int valuesLen){
+Matrix *matrixCreate(int n, int m, double *values, int valuesLen){
     if(n * m != valuesLen || !n || !m) return NULL;
 
     Matrix *matrix = calloc(1, sizeof(Matrix));
@@ -174,7 +228,7 @@ Matrix *createMatrix(int n, int m, double *values, int valuesLen){
     }
 
     if(values == NULL){
-        matrix->mat = (double *) calloc(n * m, sizeof(double));
+        matrix->mat = (double *) calloc(valuesLen, sizeof(double));
 
         if(matrix->mat == NULL){
             printf("Error making matrix list. Insufficient space. Exiting.\n");
@@ -186,10 +240,12 @@ Matrix *createMatrix(int n, int m, double *values, int valuesLen){
 
     matrix->n = n;
     matrix->m = m;
+    matrix->matIter = matrix->mat;
+    matrix->matEnd = matrix->mat + valuesLen;
     return matrix;
 }
 
-double *destroyMatrix(Matrix *matrix, char flags){
+double *matrixDestroy(Matrix *matrix, char flags){
     if(matrix == NULL) return NULL;
     double *list = NULL;
 
@@ -233,7 +289,7 @@ double dotProd(double *a, long stepA, double *b, long stepB, double *aStop){
     return sum;
 }
 
-void printMatrix(Matrix *a){
+void matrixPrint(Matrix *a){
     if(a == NULL) return;
 
     int i,j;
@@ -270,7 +326,7 @@ void printMatrix(Matrix *a){
     }
 }
 
-void printMatrixJSON(Matrix *a, FILE *output){
+void matrixPrintJSON(Matrix *a, FILE *output){
     if(a == NULL || output == NULL) return;
 
     int i,j;
@@ -326,7 +382,7 @@ void printMatrixJSON(Matrix *a, FILE *output){
     }
 }
 
-void constantAdd(Matrix *a, double c){
+void matrixConstantAdd(Matrix *a, double c){
     double *val = a->mat;
     double *stop = val + (a->m * a->n);
 
@@ -335,7 +391,7 @@ void constantAdd(Matrix *a, double c){
     }
 }
 
-void constantMul(Matrix *a, double c){
+void matrixConstantMul(Matrix *a, double c){
     double *val = a->mat;
     double *stop = val + (a->m * a->n);
 
@@ -344,7 +400,7 @@ void constantMul(Matrix *a, double c){
     }
 }
 
-void setMat(Matrix *a, double num){
+void matrixSetMat(Matrix *a, double num){
     double *val = a->mat;
     double *stop = val + (a->m * a->n);
 
