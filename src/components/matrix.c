@@ -1,12 +1,18 @@
+/**
+ * Matrix file holding the functionalities necessary for a simple Matrix, including Matrix Multiplication, creation, and deletion.
+ * 
+ * Author: Fabio Hux
+ * 
+ * Date Created: August 2020
+ * 
+ * Date Last Edited: 12/19/2020
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "matrix.h"
+#include "libremodel.h"
+#include "components/matrix.h"
 
-struct _matrix{
-    double *mat, *matEnd, *matIter;
-    int n, m;
-};
 
 //Private helper functions
 void addOp(double *target, double value){
@@ -33,13 +39,13 @@ int matrixGetN(Matrix *a){
     return a->n;
 }
 double matrixGetValue(Matrix *a, int n, int m){
-    if(a == NULL || n < 0 || m < 0 || n >= a->n || m >= a->m)
+    if(a == NULL  || a->mat == NULL || n < 0 || m < 0 || n >= a->n || m >= a->m)
         return NAN;
     return *(a->mat + (n * a->m) + m);
 }
 
 void matrixSetValue(Matrix *a, int n, int m, double value){
-    if(a != NULL && !isnan(value) && n >= 0 && m >= 0 && n < a->n && m < a->m)
+    if(a != NULL && a->mat != NULL && !isnan(value) && n >= 0 && m >= 0 && n < a->n && m < a->m)
         *(a->mat + (n * a->m) + m) = value;
 }
 
@@ -61,23 +67,122 @@ double matrixGetNext(Matrix *a, int index){
 }
 
 void matrixResetIter(Matrix *a){
-    if(a != NULL) a->matIter = a->mat;
+    if(a != NULL && a->mat != NULL) a->matIter = a->mat;
 }
 
 
 void matrixSetPrevious(Matrix *a, double value){    
-    if(a != NULL && !isnan(value) && a->matIter > a->mat && a->matIter <= a->matEnd){
+    if(a != NULL && a->mat != NULL && !isnan(value) && a->matIter > a->mat && a->matIter <= a->matEnd){
         *(a->matIter - 1) = value;
     }
 }
 
 
-
-
 Matrix *matrixMul(Matrix *a, Matrix *b, Matrix *c, char flags){
-    if(a == NULL || b == NULL || c == NULL) return NULL;
+   if(a == NULL || b == NULL || a == c || b == c || flags < 0 || flags > 23) return NULL;
     
-    int aLStep = a->m, aDStep = 1, bLStep = 1, bDStep = b->m, cLStep = 1, cRStep = 0;
+    /**
+     * Set up the variables that specify the iteration through Matrix a.
+     * 
+     * If the Matrix is meant to be transposed, we modify the values accordingly.
+     **/
+    int aLoopStep = a->m, aDPStep = 1;
+    double *aCurr = a->mat, *aDPLimit = aCurr + aLoopStep, *aLimit = a->matEnd;
+    
+    if(flags & MATRIX_A_TRANS){
+        aDPStep = aLoopStep;
+        aLoopStep = 1;
+        aDPLimit = aLimit;
+        aLimit = aCurr + aDPStep;
+    }
+    
+    /**
+     * Set up the variables that specify the iteration through Matrix b.
+     * 
+     * If the Matrix is meant to be transposed, we modify the values accordingly.
+     * At this point, we can check to see if Matrix a and Matrix b can be multiplied to one another (given the Transposition state).
+     **/
+    int bLoopStep = 1, bDPStep = b->m;
+    double *bCurr, *bLimit = b->mat + bDPStep;
+    
+    if(flags & MATRIX_B_TRANS){
+        if(b->m != (flags & MATRIX_A_TRANS ? a->n : aLoopStep)){
+            fprintf(stderr, "Matrix A and B don't correspond\n");
+            return NULL;
+        }
+        bLoopStep = bDPStep;
+        bDPStep = 1;
+        bLimit = b->matEnd;
+    }else if(b->n != (flags & MATRIX_A_TRANS ? a->n : aLoopStep)){
+        fprintf(stderr, "Matrix A and B don't correspond\n");
+        return NULL;
+    }
+    
+    /**
+     * Set up the variables that specify the iteration through Matrix c.
+     * 
+     * If the Matrix is meant to be transposed, we modify the values accordingly.
+     * At this point, we can check to see if the resulting Matrix from multiplying a and b will be the same dimension as Matrix c (given the Transposition state).
+     **/
+    int cInnerStep = 1, cOuterStep = 0;
+    if(c == NULL){
+        int n = flags & MATRIX_A_TRANS ? aDPStep : a->n;
+        int m = flags & MATRIX_B_TRANS ? b->n : bDPStep;
+        if(flags & MATRIX_C_TRANS){
+            c = matrixCreate(m, n, NULL, n * m);
+            cInnerStep = n;
+            cOuterStep = 1 - (m * n);
+        }else{
+            c = matrixCreate(n, m, NULL, n * m);
+        }
+        
+        if(c == NULL) return NULL;
+    }else{
+        if(flags & MATRIX_C_TRANS){
+            if(c->m != (flags & MATRIX_A_TRANS ? aDPStep : a->n) || c->n != (flags & MATRIX_B_TRANS ? b->n : bDPStep)){
+                fprintf(stderr, "Matrix C(T) doesn't correspond with A or B\n");
+                return NULL;
+            }
+            cInnerStep = c->m;
+            cOuterStep = 1 - (cInnerStep * c->n);
+        }else if(c->n != (flags & MATRIX_A_TRANS ? aDPStep : a->n) || c->m != (flags & MATRIX_B_TRANS ? b->n : bDPStep)){
+            fprintf(stderr, "Matrix C [%d,%d] doesn't correspond with A[%d,%d] or B [%d,%d]\n", c->n, c->m, a->n, a->m, b->n,b->m);
+            return NULL;
+        }
+    }
+    double *cCurr = c->mat;
+    
+    /**
+     * Decide what to do with the result with respect to Matrix c.
+     * 
+     * The default is to set all the resulting values into c.
+     * 
+     * FORM: a * b = c
+     * 
+     * The user is provided the option to add or subtract the result from whatever values c currently has.
+     * 
+     * FORM: c = c (+/-) (a * b)
+     **/
+    void (*op)(double *, double) = setOp;
+    
+    if(flags & MATRIX_RESULT_ADD){
+        op = addOp;
+    }else if(flags & MATRIX_RESULT_SUB){
+        op = subOp;
+    }
+    
+    for(;aCurr < aLimit; aCurr += aLoopStep, aDPLimit += aLoopStep){
+        for(bCurr = b->mat;bCurr < bLimit; bCurr += bLoopStep){
+            op(cCurr, dotProd(aCurr, aDPStep, bCurr, bDPStep, aDPLimit));
+            cCurr += cInnerStep;
+        }
+        cCurr += cOuterStep;
+    }
+    
+    return c;
+    
+    
+    /*int aLStep = a->m, aDStep = 1, bLStep = 1, bDStep = b->m, cLStep = 1, cRStep = 0;
     double *aMat = a->mat, *bMat = b->mat, *cMat = c->mat, *aStop = a->matEnd, *bStop = b->matEnd, *aHalt = aMat + aLStep;
     void (*op)(double *, double) = setOp;
     
@@ -121,7 +226,7 @@ Matrix *matrixMul(Matrix *a, Matrix *b, Matrix *c, char flags){
         cMat -= cRStep;
     }
     
-    return c;
+    return c;*/
 }
 
 Matrix *matrixAdd(Matrix *a, Matrix *b, Matrix *c, char flags){
@@ -156,7 +261,10 @@ Matrix *matrixAdd(Matrix *a, Matrix *b, Matrix *c, char flags){
         bStep = b->m;
         bOff = (b->m * b->n) - 1;
     }else if(b->n != n || b->m != m){
-        printf("I dipped4 matAdd.\n");
+        if(b->n != n)
+            fprintf(stderr, "Error in matrixAdd. b->n != c->n (%d vs %d).\n", b->n, n);
+        else
+            fprintf(stderr, "Error in matrixAdd. b->m != c->m (%d vs %d).\n", b->m, m);
         return NULL;
     }
 
@@ -203,7 +311,10 @@ Matrix *matrixSub(Matrix *a, Matrix *b, Matrix *c, char flags){
         bStep = b->m;
         bOff = (b->m * b->n) - 1;
     }else if(b->n != n || b->m != m){
-        printf("I dipped4 matAdd.\n");
+        if(b->n != n)
+            fprintf(stderr, "Error in matrixSub. b->n != c->n (%d vs %d).\n", b->n, n);
+        else
+            fprintf(stderr, "Error in matrixSub. b->m != c->m (%d vs %d).\n", b->m, m);
         return NULL;
     }
 
@@ -227,15 +338,17 @@ Matrix *matrixCreate(int n, int m, double *values, int valuesLen){
         exit(0);
     }
 
-    if(values == NULL){
-        matrix->mat = (double *) calloc(valuesLen, sizeof(double));
+    matrix->mat = (double *) calloc(valuesLen, sizeof(double));
 
-        if(matrix->mat == NULL){
-            printf("Error making matrix list. Insufficient space. Exiting.\n");
-            exit(0);
+    if(matrix->mat == NULL){
+        printf("Error making matrix list. Insufficient space. Exiting.\n");
+        exit(0);
+    }
+    if(values != NULL){
+        int i;
+        for(i = 0; i < valuesLen; i++){
+            matrix->mat[i] = values[i];
         }
-    }else{
-        matrix->mat = values;
     }
 
     matrix->n = n;
@@ -263,7 +376,7 @@ double *matrixDestroy(Matrix *matrix, char flags){
 double dotProd(double *a, long stepA, double *b, long stepB, double *aStop){
     double sum = 0;
 
-    asm volatile(
+    /*asm volatile(
         "pxor %%xmm0, %%xmm0\n\t"
         "jmp 2f\n\t"
         "1: movsd (%1), %%xmm1\n\t"
@@ -278,13 +391,13 @@ double dotProd(double *a, long stepA, double *b, long stepB, double *aStop){
         : "=r" (sum)
         : "D" (a), "S" (stepA * 8), "d" (b), "r" (stepB * 8), "r" (aStop)
         :"%xmm0", "%xmm1", "%xmm2"
-    );
+    );*/
 
-    /*while(a < aStop){
+    while(a < aStop){
         sum += *a * *b;
         a += stepA;
         b += stepB;
-    }*/
+    }
 
     return sum;
 }
@@ -297,7 +410,7 @@ void matrixPrint(Matrix *a){
         if(a->n <= 20 || (i < 5 || i >= a->n - 5)){
             for(j = 0; j < a->m; j++){
                 if(a->m <= 20 || (j < 5 || j >= a->m - 5))
-                    printf("%10.2lf\t", a->mat[(i * a->m) + j]);
+                    printf("%10.6lf\t", a->mat[(i * a->m) + j]);
                 else if(j == 5){
                     int k = 3;
                     for(;k > 0; k--){

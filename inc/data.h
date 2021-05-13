@@ -1,6 +1,6 @@
 #ifndef DATA_CONST
 #define DATA_CONST
-#include "list.h"
+#include "libremodel.h"
 
 typedef struct{
     List *feats, *cls, *uFeats;
@@ -13,10 +13,11 @@ typedef struct{
 
 Data *createData();
 void deleteData(Data *data);
-
+/*
 DataPack *createDataPack();
 void deleteDataPack(void *datapack);
 
 List *createCrossVal(Data *data, int folds);
 void deleteCrossVal(List *crossVals);
+*/
 #endif

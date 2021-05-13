@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "libremodel.h"
 #include "data.h"
 
 /**
@@ -28,30 +29,24 @@ Data *createData(){
     Data *data = (Data *) calloc(1,sizeof(Data));
 
     if(data != NULL){
-        data->cls = createDataList(100, sizeof(int), NULL, NULL);
+        data->cls = listCreate(100, sizeof(Matrix *), NULL, nulled_matrix_destroy);
         if(data->cls != NULL){
-            data->uFeats = createDataList(1000, sizeof(double), dblCmp, NULL);
+            data->uFeats = listCreate(1000, sizeof(double), list_double_cmp, NULL);
             if(data->uFeats != NULL){
-                data->feats = createDataList(100,sizeof(List *),NULL, listDestroyer);
-                if(data->feats == NULL){
-                    printf("Failed\n");
-                    deleteData(data);
-                    return NULL;
+                data->feats = listCreate(100,sizeof(Matrix *),NULL, nulled_matrix_destroy);
+                if(data->feats != NULL){
+                    return data;
                 }
-            }else{
-                deleteData(data);
-                return NULL;
             }
-        }else{
-            deleteData(data);
-            return NULL;
         }
     }else{
         printf("An error occurred with malloc in createData on creating the data. Exiting.\n");
         exit(0);
     }
 
-    return data;
+    //printf("Failed\n");
+    deleteData(data);
+    return NULL;
 }
 
 /**
@@ -64,13 +59,13 @@ Data *createData(){
 void deleteData(Data *data){
     if(data == NULL) return;
 
-    deleteDataList(data->feats);
-    deleteDataList(data->cls);
-    deleteDataList(data->uFeats);
+    listDestroy(data->feats);
+    listDestroy(data->cls);
+    listDestroy(data->uFeats);
 
     free(data);
 }
-
+/* TO FIX LATER
 DataPack *createDataPack(){
     DataPack *datapack = (DataPack *) calloc(sizeof(DataPack),1);
     if(datapack != NULL){
@@ -143,3 +138,4 @@ void deleteCrossVal(List *crossVals){
 
     }
 }
+*/

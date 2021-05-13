@@ -5,24 +5,19 @@
  * 
  * Date Created: 5/24/2020
  * 
- * Date Last Edited: 10/12/2020
+ * Date Last Edited: 12/19/2020
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-#include "list.h"
+#include "libremodel.h"
+#include "components/list.h"
 
 #define ADDR(LIST, IND) LIST->data + (IND * LIST->eSize)
 
-struct _list{
-    void *data;
-    int (*cmp)(void *, void *);
-    void (*destroy)(void *);
-    int size, len;
-    int eSize;
-};
+static char list_in_built_in = 0;
 
 void insertionResize(List *list);
 void shiftOneRight(char *start, long offset, char *stop);
@@ -34,7 +29,7 @@ void shiftOneLeft(char *start, long offset, char *stop);
  * Function will return a value equating to *a - *b in the forms of integers. Function is to be used as cmp for createDataList() in the event the elements are of type int.
  * 
  */
-int intCmp(void *a, void *b){
+int list_int_cmp(void *a, void *b){
     return LIST_DER(int, a) - LIST_DER(int, b);
 }
 
@@ -44,7 +39,7 @@ int intCmp(void *a, void *b){
  * Function will return a int value equating to double casted *a - *b. Function is to be used as cmp for createDataList() in the event the elements are of type double.
  * 
  */
-int dblCmp(void *a, void *b){
+int list_double_cmp(void *a, void *b){
     return (int) (LIST_DER(double, a) - LIST_DER(double,b));
 }
 
@@ -57,6 +52,12 @@ void listDestroyer(void *element){
     List *list = LIST_DER(List *, element);
 
     listDestroy(list);
+}
+
+void nulled_matrix_destroy(void *matrix){
+    if(matrix != NULL){
+        matrixDestroy(LIST_DER(Matrix *, matrix), 0);
+    }
 }
 
 /**
@@ -110,6 +111,25 @@ void shiftOneRight(char *start, long offset, char *stop){
  * NOTE: There is no safety in this function and must be done with care!
  */
 void shiftOneLeft(char *start, long offset, char *stop){
+//     asm volatile(
+//         "jmp 2f\n\t"
+//         "1:movq (%0, %1), %%rcx\n\t"
+//         "movq %%rcx, (%0)\n\t"
+//         "addq $8, %0\n\t"
+//         "2: cmpq %2, %0\n\t"
+//         "jl 1b\n\t"
+//         "subq $7, %0\n\t"
+//         "jmp 4f\n\t"
+//         "3:movb (%0, %1), %%cl\n\t"
+//         "movb %%cl, (%0)\n\t"
+//         "incq %0\n\t"
+//         "4: cmpq %2, %0\n\t"
+//         "jl 3b\n\t"
+//         : 
+//         : "D" (start), "S" (offset), "d" (stop)
+//         : "%rcx", "%cl"
+//     );
+    
     asm volatile(
         "jmp 2f\n\t"
         "1:movq (%0, %1), %%rcx\n\t"
@@ -117,13 +137,6 @@ void shiftOneLeft(char *start, long offset, char *stop){
         "addq $8, %0\n\t"
         "2: cmpq %2, %0\n\t"
         "jl 1b\n\t"
-        "subq $7, %0\n\t"
-        "jmp 4f\n\t"
-        "3:movb (%0, %1), %%cl\n\t"
-        "movb %%cl, (%0)\n\t"
-        "incq %0\n\t"
-        "4: cmpq %2, %0\n\t"
-        "jl 3b\n\t"
         : 
         : "D" (start), "S" (offset), "d" (stop)
         : "%rcx", "%cl"
@@ -175,8 +188,14 @@ char listInsertSorted(List *list, void *value){
     int index = listIndexOf(list, value);
 
     if(index < 0) index = ~index;
+    
+    list_in_built_in = 1;
+    
+    char ret = listInsert(list, value, index);
+    
+    list_in_built_in = 0;
 
-    return listInsert(list, value, index);
+    return ret;
 }
 
 /**
@@ -229,7 +248,11 @@ void *listRemoveRet(List *list, int index){
 
         shiftOneLeft(start, list->eSize, stop);
     }
-
+    
+    if(list->size < 2){
+        list->sorted = 1;
+    }
+    
     //list->size--;
     return value;
 }
@@ -287,7 +310,10 @@ char listSet(List *list, int index, void *value){
     if(index >= list->size || index < 0){
         return 0;
     }
-
+    
+    if(!list_in_built_in && list->size > 1){
+        list->sorted = 0;
+    }
     memcpy(ADDR(list, index), value, list->eSize);
     
     return 1;
@@ -312,31 +338,43 @@ int listIndexOf(List *list, void *value){
 
     
     if(list->size == 0){
-        return 0;
+        return -1;
     }
+    
+    if(list->sorted){
+        int low = 0, high = list->size - 1, mid, diff;
+        void *lAddr = ADDR(list, low), *hAddr = ADDR(list, high); 
 
-    int low = 0, high = list->size - 1, mid, diff;
-    void *lAddr = ADDR(list, low), *hAddr = ADDR(list, high); 
-
-    while(1){
-        if(listCmpVal(lAddr, value, list) > 0){
-            return ~low;
-        }else if(listCmpVal(hAddr, value, list) < 0){
-            return ~(high + 1);
-        }else{
-            mid = (high + low) >> 1;
-            diff = listCmpVal(ADDR(list, mid), value, list);
-            if(!diff){
-                return mid;
-            }else if(diff < 0){
-                low = mid + 1;
-                lAddr = ADDR(list, low);
+        while(1){
+            if(listCmpVal(lAddr, value, list) > 0){
+                return ~low;
+            }else if(listCmpVal(hAddr, value, list) < 0){
+                return ~(high + 1);
             }else{
-                high = mid - 1;
-                hAddr = ADDR(list, high);
+                mid = (high + low) >> 1;
+                diff = listCmpVal(ADDR(list, mid), value, list);
+                if(!diff){
+                    return mid;
+                }else if(diff < 0){
+                    low = mid + 1;
+                    lAddr = ADDR(list, low);
+                }else{
+                    high = mid - 1;
+                    hAddr = ADDR(list, high);
+                }
             }
         }
     }
+    
+    //Not sorted so it iterates through the list to see if it exists
+    void *currAddr = ADDR(list, 0);
+    for(int i = 0; i < list->size; i++, currAddr += list->eSize){
+        if(!listCmpVal(value, currAddr, list)){
+            return i;
+        }
+    }
+    
+    return -1;
 }
 
 int listGetSize(List *list){
@@ -352,19 +390,6 @@ int listGetESize(List *list){
         return -1;
     } 
     return list->eSize;
-}
-
-/**
- * DO NOT USE
- * Function to find the index of a given value in the list or the index with which it is preferable to insert the given value to the list.
- * 
- * Function is identical in use as indexOf() (see indexOf()) with the exception that instead of return -1 on failure for searching, it will instead return the index to potentially insert the given value into the given list.
- * Normally it should not provide any functional use to an outside user and it is meant to be used as a helper function.
- * 
- * NOTE that this function uses binary search and not having a sorted list will lead to errors.
- */
-int closestIndexOf(List *list, void *value){
-    return 0;
 }
 
 /**
@@ -415,6 +440,7 @@ List *listCreate(int len, size_t size, int (*cmp)(void *, void *), void (*destro
     list->eSize = size;
     list->cmp = cmp;
     list->destroy = destroy;
+    list->sorted = 1; //By default an empty list is always sorted
 
     return list;
 }
